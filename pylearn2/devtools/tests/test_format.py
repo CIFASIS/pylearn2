@@ -18,7 +18,6 @@ whitelist_pep8 = [
     "distributions/mnd.py",
     "models/sparse_autoencoder.py",
     "models/tests/test_dbm.py",
-    "models/tests/test_autoencoder.py",
     "models/tests/test_s3c_inference.py",
     "models/tests/test_mnd.py",
     "models/tests/test_s3c_misc.py",
@@ -30,7 +29,6 @@ whitelist_pep8 = [
     "models/local_coordinate_coding.py",
     "models/mnd.py",
     "models/s3c.py",
-    "models/autoencoder.py",
     "tests/test_monitor.py",
     "kmeans.py",
     "packaged_dependencies/theano_linear/conv2d.py",
@@ -93,7 +91,6 @@ whitelist_pep8 = [
     "costs/ebm_estimation.py",
     "costs/gsn.py",
     "costs/mlp/missing_target_cost.py",
-    "costs/autoencoder.py",
     "linear/conv2d.py",
     "linear/local_c01b.py",
     "linear/linear_transform.py",
@@ -124,7 +121,6 @@ whitelist_pep8 = [
     "scripts/datasets/make_stl10_patches.py",
     "scripts/gsn_example.py",
     "scripts/tutorials/deep_trainer/run_deep_trainer.py",
-    "scripts/tutorials/grbm_smd/make_dataset.py",
     "scripts/tutorials/grbm_smd/test_grbm_smd.py",
     "scripts/icml_2013_wrepl/multimodal/"
     "extract_layer_2_kmeans_features.py",
@@ -170,7 +166,6 @@ whitelist_pep8 = [
     "packaged_dependencies/theano_linear/__init__.py",
     "packaged_dependencies/theano_linear/test_linear.py",
     "expr/tests/test_nnet.py",
-    "expr/nnet.py",
     "expr/image.py",
     "expr/coding.py",
     "expr/normalize.py",
@@ -734,7 +729,7 @@ def verify_format_docstrings():
             continue
         try:
             format_infractions.extend(docstring_errors(path))
-        except StandardError as e:
+        except Exception as e:
             format_infractions.append(["%s failed to run so format cannot "
                                        "be checked. Error message:\n %s" %
                                        (rel_path, e)])

@@ -9,11 +9,13 @@ __maintainer__ = "LISA Lab"
 
 import logging
 import math
+import operator
 import sys
 import warnings
 
 import numpy as np
-from theano.compat.six.moves import xrange
+from theano.compat import six
+from theano.compat.six.moves import reduce, xrange
 from theano import config
 from theano.gof.op import get_debug_values
 from theano.sandbox.rng_mrg import MRG_RandomStreams
@@ -25,6 +27,7 @@ from pylearn2.costs.mlp import Default
 from pylearn2.expr.probabilistic_max_pooling import max_pool_channels
 from pylearn2.linear import conv2d
 from pylearn2.linear.matrixmul import MatrixMul
+from pylearn2.model_extensions.norm_constraint import MaxL2FilterNorm
 from pylearn2.models.model import Model
 from pylearn2.monitor import get_monitor_doc
 from pylearn2.expr.nnet import pseudoinverse_softmax_numpy
@@ -73,8 +76,13 @@ logger.debug("MLP changing the recursion limit.")
 # precisely when you're going to exceed the stack segment.
 sys.setrecursionlimit(40000)
 
+if six.PY3:
+    LayerBase = six.with_metaclass(RNNWrapper, Model)
+else:
+    LayerBase = Model
 
-class Layer(Model):
+
+class Layer(LayerBase):
 
     """
     Abstract class. A Layer of an MLP.
@@ -394,6 +402,11 @@ class MLP(Layer):
         MLP accepts. The structure should match that of input_space. The
         default is 'features'. Note that this argument is ignored when
         the MLP is nested.
+    target_source : string or (nested) tuple of strings, optional
+        A (nested) tuple of strings specifiying the target sources this
+        MLP accepts. The structure should match that of target_space. The
+        default is 'targets'. Note that this argument is ignored when
+        the MLP is nested.
     layer_name : name of the MLP layer. Should be None if the MLP is
         not part of another MLP.
     seed : WRITEME
@@ -407,8 +420,9 @@ class MLP(Layer):
     """
 
     def __init__(self, layers, batch_size=None, input_space=None,
-                 input_source='features', nvis=None, seed=None,
-                 layer_name=None, monitor_targets=True, **kwargs):
+                 input_source='features', target_source='targets',
+                 nvis=None, seed=None, layer_name=None, monitor_targets=True,
+                 **kwargs):
         super(MLP, self).__init__(**kwargs)
 
         self.seed = seed
@@ -436,6 +450,7 @@ class MLP(Layer):
         self.force_batch_size = batch_size
 
         self._input_source = input_source
+        self._target_source = target_source
 
         self.monitor_targets = monitor_targets
 
@@ -467,15 +482,15 @@ class MLP(Layer):
 
         self.freeze_set = set([])
 
-        def f(x):
-            if x is None:
-                return None
-            return 1. / x
-
     @property
     def input_source(self):
         assert not self._nested, "A nested MLP does not have an input source"
         return self._input_source
+
+    @property
+    def target_source(self):
+        assert not self._nested, "A nested MLP does not have a target source"
+        return self._target_source
 
     def setup_rng(self):
         """
@@ -677,7 +692,7 @@ class MLP(Layer):
         if len(layer_costs) == 0:
             return T.constant(0, dtype=config.floatX)
 
-        total_cost = reduce(lambda x, y: x + y, layer_costs)
+        total_cost = reduce(operator.add, layer_costs)
 
         return total_cost
 
@@ -696,7 +711,7 @@ class MLP(Layer):
         if len(layer_costs) == 0:
             return T.constant(0, dtype=config.floatX)
 
-        total_cost = reduce(lambda x, y: x + y, layer_costs)
+        total_cost = reduce(operator.add, layer_costs)
 
         return total_cost
 
@@ -1130,6 +1145,9 @@ class Softmax(Layer):
 
         super(Softmax, self).__init__()
 
+        if max_col_norm is not None:
+            self.extensions.append(MaxL2FilterNorm(max_col_norm))
+
         if non_redundant:
             if init_bias_target_marginals:
                 msg = ("init_bias_target_marginals currently only works "
@@ -1462,14 +1480,6 @@ class Softmax(Layer):
                 desired_norms = T.clip(row_norms, 0, self.max_row_norm)
                 scales = desired_norms / (1e-7 + row_norms)
                 updates[W] = updated_W * scales.dimshuffle(0, 'x')
-        if self.max_col_norm is not None:
-            assert self.max_row_norm is None
-            W = self.W
-            if W in updates:
-                updated_W = updates[W]
-                col_norms = T.sqrt(T.sum(T.sqr(updated_W), axis=0))
-                desired_norms = T.clip(col_norms, 0, self.max_col_norm)
-                updates[W] = updated_W * (desired_norms / (1e-7 + col_norms))
 
 
 class SoftmaxPool(Layer):
@@ -2921,6 +2931,7 @@ class ConvElemwise(Layer):
                  output_normalization=None,
                  kernel_stride=(1, 1),
                  monitor_style="classification"):
+        super(ConvElemwise, self).__init__()
 
         if (irange is None) and (sparse_init is None):
             raise AssertionError("You should specify either irange or "
@@ -3033,15 +3044,19 @@ class ConvElemwise(Layer):
         rng = self.mlp.rng
 
         if self.border_mode == 'valid':
-            output_shape = [(self.input_space.shape[0] - self.kernel_shape[0])
-                            / self.kernel_stride[0] + 1,
-                            (self.input_space.shape[1] - self.kernel_shape[1])
-                            / self.kernel_stride[1] + 1]
+            output_shape = [int((self.input_space.shape[0]
+                                 - self.kernel_shape[0])
+                                / self.kernel_stride[0]) + 1,
+                            int((self.input_space.shape[1]
+                                 - self.kernel_shape[1])
+                                / self.kernel_stride[1]) + 1]
         elif self.border_mode == 'full':
-            output_shape = [(self.input_space.shape[0] + self.kernel_shape[0])
-                            / self.kernel_stride[0] - 1,
-                            (self.input_space.shape[1] + self.kernel_shape[1])
-                            / self.kernel_stride[1] - 1]
+            output_shape = [int((self.input_space.shape[0]
+                                 + self.kernel_shape[0])
+                                / self.kernel_stride[0]) - 1,
+                            int((self.input_space.shape[1]
+                                 + self.kernel_shape[1])
+                                / self.kernel_stride[1]) - 1]
 
         self.detector_space = Conv2DSpace(shape=output_shape,
                                           num_channels=self.output_channels,
@@ -4274,8 +4289,8 @@ class FlattenerLayer(Layer):
 
     Parameters
     ----------
-    raw_layer : WRITEME
-        WRITEME
+    raw_layer : Layer
+        Layer that FlattenerLayer wraps.
     """
 
     def __init__(self, raw_layer):
@@ -4302,13 +4317,29 @@ class FlattenerLayer(Layer):
     @wraps(Layer.get_layer_monitoring_channels)
     def get_layer_monitoring_channels(self, state_below=None,
                                       state=None, targets=None):
+
+        raw_space = self.raw_layer.get_output_space()
+
+        if isinstance(raw_space, CompositeSpace):
+            # Pick apart the Join that fprop used to make state.
+            assert hasattr(state, 'owner')
+            owner = state.owner
+            assert owner is not None
+            assert str(owner.op) == 'Join'
+            # First input to join op in the axis.
+            raw_state = tuple(owner.inputs[1:])
+            raw_space.validate(raw_state)
+            state = raw_state
+        else:
+            # Format state as layer output space.
+            state = self.get_output_space().format_as(state, raw_space)
+
         if targets is not None:
             targets = self.get_target_space().format_as(
                 targets, self.raw_layer.get_target_space())
         return self.raw_layer.get_layer_monitoring_channels(
             state_below=state_below,
-            state=self.get_output_space().format_as(
-                state, self.raw_layer.get_output_space()),
+            state=state,
             targets=targets
         )
 
@@ -4668,7 +4699,7 @@ def geometric_mean_prediction(forward_props):
         assert isinstance(out.owner.op, T.nnet.Softmax)
         assert len(out.owner.inputs) == 1
         presoftmax.append(out.owner.inputs[0])
-    average = reduce(lambda x, y: x + y, presoftmax) / float(len(presoftmax))
+    average = reduce(operator.add, presoftmax) / float(len(presoftmax))
     return T.nnet.softmax(average)
 
 

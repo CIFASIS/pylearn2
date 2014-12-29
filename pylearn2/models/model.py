@@ -9,7 +9,6 @@ __email__ = "pylearn-dev@googlegroups"
 from collections import defaultdict
 from theano.compat.six.moves import zip as izip_no_length_check
 import numpy as np
-import warnings
 
 from theano.compat import six
 from theano import tensor as T
@@ -38,6 +37,7 @@ class Model(object):
     _test_batch_size = 2
 
     def __init__(self, extensions=None):
+        super(Model, self).__init__()
         if extensions is None:
             extensions = []
         else:
@@ -68,10 +68,9 @@ class Model(object):
         """
 
         if not hasattr(self, "extensions"):
-            warnings.warn("The " + str(type(self)) + " Model subclass "
-                          "seems not to call the Model constructor. This "
-                          "behavior may be considered an error on or after "
-                          "2014-11-01.")
+            raise TypeError("The " + str(type(self)) + " Model subclass "
+                            "is required to call the Model superclass "
+                            "constructor but does not.")
             self.extensions = []
 
     def __setstate__(self, d):
@@ -342,6 +341,7 @@ class Model(object):
         """
         Deprecated method. Callers should call modify_updates instead.
         Subclasses should override _modify_updates instead.
+        This method may be removed on or after 2015-05-25.
 
         Parameters
         ----------
@@ -386,7 +386,7 @@ class Model(object):
 
         self._ensure_extensions()
         for extension in self.extensions:
-            extension.post_modify_updates(updates)
+            extension.post_modify_updates(updates, self)
 
     def _modify_updates(self, updates):
         """
@@ -446,9 +446,12 @@ class Model(object):
     def get_target_source(self):
         """
         Returns a string, stating the source for the output. By default the
-        output source (when is the only one) is called 'targets'.
+        model expects only one output source, which is called 'targets'.
         """
-        return 'targets'
+        if hasattr(self, 'target_source'):
+            return self.target_source
+        else:
+            return 'targets'
 
     def free_energy(self, V):
         """
@@ -590,6 +593,7 @@ class Model(object):
         Returns the number of visible units of the model.
         Deprecated; this assumes the model operates on a vector.
         Use get_input_space instead.
+        This method may be removed on or after 2015-05-25.
         """
         raise NotImplementedError()
 
@@ -598,6 +602,7 @@ class Model(object):
         Returns the number of visible units of the model.
         Deprecated; this assumes the model operates on a vector.
         Use get_input_space instead.
+        This method may be removed on or after 2015-05-25.
         """
         raise NotImplementedError()
 

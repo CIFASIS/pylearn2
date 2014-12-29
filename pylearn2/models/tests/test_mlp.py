@@ -4,7 +4,7 @@ from itertools import product
 
 import numpy as np
 from theano.compat import six
-from theano.compat.six.moves import xrange
+from theano.compat.six.moves import reduce, xrange
 import theano
 from theano import tensor, config
 from nose.tools import assert_raises
@@ -316,6 +316,36 @@ def test_multiple_inputs():
     train.algorithm.termination_criterion = EpochCounter(1)
     train.main_loop()
 
+def test_input_and_target_source():
+    """
+    Create a MLP and test input_source and target_source
+    for default and non-default options.
+    """
+    mlp = MLP(
+        layers=[CompositeLayer(
+                    'composite',
+                    [Linear(10, 'h0', 0.1),
+                     Linear(10, 'h1', 0.1)],
+                    {
+                        0: [1],
+                        1: [0]
+                    }
+                )
+        ],
+        input_space=CompositeSpace([VectorSpace(15), VectorSpace(20)]),
+        input_source=('features0', 'features1'),
+        target_source=('targets0', 'targets1')
+    )
+    np.testing.assert_equal(mlp.get_input_source(), ('features0', 'features1'))
+    np.testing.assert_equal(mlp.get_target_source(), ('targets0', 'targets1'))
+
+    mlp = MLP(
+        layers=[Linear(10, 'h0', 0.1)],
+        input_space=VectorSpace(15)
+    )
+    np.testing.assert_equal(mlp.get_input_source(), 'features')
+    np.testing.assert_equal(mlp.get_target_source(), 'targets')
+
 def test_get_layer_monitor_channels():
     """
     Create a MLP with multiple layer types
@@ -354,6 +384,30 @@ def test_get_layer_monitor_channels():
     mlp.get_layer_monitoring_channels(state_below=state_below,
             state=None, targets=targets)
 
+def test_flattener_layer_state_separation_for_softmax():
+    """
+    Creates a CompositeLayer wrapping two Softmax layers
+    and ensures that state gets correctly picked apart.
+    """
+    mlp = MLP(
+            layers=[
+                FlattenerLayer(
+                    CompositeLayer(
+                        'composite',
+                        [Softmax(5, 'sf1', 0.1),
+                         Softmax(5, 'sf2', 0.1)]
+                    )
+                )
+            ],
+            nvis=2
+            )
+
+    dataset = DenseDesignMatrix(X=np.random.rand(20, 2).astype(theano.config.floatX),
+            y=np.random.rand(20, 10).astype(theano.config.floatX))
+
+    train = Train(dataset, mlp, SGD(0.1, batch_size=5,monitoring_dataset = dataset))
+    train.algorithm.termination_criterion = EpochCounter(1)
+    train.main_loop()
 
 def test_nested_mlp():
     """

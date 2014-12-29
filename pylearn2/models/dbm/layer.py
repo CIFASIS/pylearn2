@@ -12,7 +12,8 @@ __maintainer__ = "LISA Lab"
 import functools
 import logging
 import numpy as np
-from theano.compat.six.moves import xrange
+import operator
+from theano.compat.six.moves import input, reduce, xrange
 import time
 import warnings
 
@@ -264,9 +265,12 @@ class VisibleLayer(Layer):
 
     def get_total_state_space(self):
         """
-        .. todo::
+        Returns the total state of the layer.
 
-            WRITEME
+        Returns
+        -------
+        total_state : member of the input space
+            The total state of the layer.
         """
         return self.get_input_space()
 
@@ -330,9 +334,15 @@ class BinaryVector(VisibleLayer):
     bias_from_marginals : pylearn2.datasets.dataset.Dataset
         Dataset, whose marginals are used to initialize the visible biases
     center : bool
-        WRITEME
+        If True, use Gregoire Montavon's centering trick
     copies : int
-        WRITEME
+        Use this number of virtual copies of the state. All the copies
+        still share parameters. This can be useful for balancing the
+        amount of influencing two neighboring layers have on each other
+        if the layers have different numbers or different types of units.
+        Without this replication, layers with more units or units with
+        a greater dynamic range would dominate the interaction due to
+        the symmetric nature of undirected interactions.
     """
     def __init__(self,
             nvis,
@@ -340,6 +350,7 @@ class BinaryVector(VisibleLayer):
             center = False,
             copies = 1, learn_init_inpainting_state = False):
 
+        super(BinaryVector, self).__init__()
         self.__dict__.update(locals())
         del self.self
         # Don't serialize the dataset
@@ -637,23 +648,40 @@ class BinaryVectorMaxPool(HiddenLayer):
 
     Parameters
     ----------
-    detector_layer_dim : WRITEME
-    pool_size : WRITEME
-    layer_name : WRITEME
-    irange : WRITEME
-    sparse_init : WRITEME
-    sparse_stdev : WRITEME
+    detector_layer_dim : int
+        Number of units in the detector layer
+    pool_size : int
+        Number of detector units per pooling unit
+        (Pools are disjoint)
+    layer_name : str
+        Name of the layer
+    irange : float
+        If specified, initialize the weights in U(-irange, irange)
     include_prob : , optional
         Probability of including a weight element in the set of weights
         initialized to U(-irange, irange). If not included it is
         initialized to 0.
-    init_bias : WRITEME
-    W_lr_scale : WRITEME
-    b_lr_scale : WRITEME
-    center : WRITEME
+    sparse_init : int
+        If specified, initialize this many weights in each column
+        to be nonzero.
+    sparse_stdev : float
+        When using sparse_init, the non-zero weights are drawn from
+        a Gaussian distribution with mean 0 and standard deviation
+        `sparse_stdev`
+    init_bias : float or ndarray
+        Initialize the biases to this value
+    W_lr_scale : float
+        Multiply the learning rate on the weights by this number
+    b_lr_scale : float
+        Multiply the learning rate on the biases by this number
+    center : bool
+        If True, use Gregoire Montavon's centering trick
     mask_weights : WRITEME
-    max_col_norm : WRITEME
-    copies : WRITEME
+    max_col_norm : float
+        Constrain the columns of the weight matrix to have at most
+        this norm
+    copies : int
+        See BinaryVector docstring for explanation
     """
     # TODO: this layer uses (pooled, detector) as its total state,
     #       which can be confusing when listing all the states in
@@ -676,6 +704,7 @@ class BinaryVectorMaxPool(HiddenLayer):
             mask_weights = None,
             max_col_norm = None,
             copies = 1):
+        super(BinaryVectorMaxPool, self).__init__()
         self.__dict__.update(locals())
         del self.self
 
@@ -1345,7 +1374,7 @@ class BinaryVectorMaxPool(HiddenLayer):
                 for sb in get_debug_values(state_below):
                     if sb.shape[0] != self.dbm.batch_size:
                         raise ValueError("self.dbm.batch_size is %d but got shape of %d" % (self.dbm.batch_size, sb.shape[0]))
-                    assert reduce(lambda x,y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below, self.desired_space)
 
@@ -1410,7 +1439,7 @@ class BinaryVectorMaxPool(HiddenLayer):
                 for sb in get_debug_values(state_below):
                     if sb.shape[0] != self.dbm.batch_size:
                         raise ValueError("self.dbm.batch_size is %d but got shape of %d" % (self.dbm.batch_size, sb.shape[0]))
-                    assert reduce(lambda x,y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below, self.desired_space)
 
@@ -1483,6 +1512,9 @@ class Softmax(HiddenLayer):
                  max_col_norm = None,
                  copies = 1, center = False,
                  learn_init_inpainting_state = True):
+
+        super(Softmax, self).__init__()
+
         if isinstance(W_lr_scale, str):
             W_lr_scale = float(W_lr_scale)
 
@@ -2052,7 +2084,7 @@ class GaussianVisLayer(VisibleLayer):
             self.space = Conv2DSpace(shape=[rows,cols], num_channels=channels, axes=axes)
             # To make GaussianVisLayer compatible with any axis ordering
             self.batch_axis=list(axes).index('b')
-            self.axes_to_sum = range(len(axes))
+            self.axes_to_sum = list(range(len(axes)))
             self.axes_to_sum.remove(self.batch_axis)
         else:
             assert rows is None
@@ -3524,7 +3556,7 @@ class BVMP_Gaussian(BinaryVectorMaxPool):
         W ,= self.transformer.get_params()
         W = W.get_value()
 
-        x = raw_input("multiply by beta?")
+        x = input("multiply by beta?")
         if x == 'y':
             beta = self.input_layer.beta.get_value()
             return (W.T * beta).T
@@ -3684,7 +3716,7 @@ class BVMP_Gaussian(BinaryVectorMaxPool):
                 for sb in get_debug_values(state_below):
                     if sb.shape[0] != self.dbm.batch_size:
                         raise ValueError("self.dbm.batch_size is %d but got shape of %d" % (self.dbm.batch_size, sb.shape[0]))
-                    assert reduce(lambda x,y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below, self.desired_space)
 
@@ -3761,7 +3793,7 @@ class BVMP_Gaussian(BinaryVectorMaxPool):
                 for sb in get_debug_values(state_below):
                     if sb.shape[0] != self.dbm.batch_size:
                         raise ValueError("self.dbm.batch_size is %d but got shape of %d" % (self.dbm.batch_size, sb.shape[0]))
-                    assert reduce(lambda x,y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below, self.desired_space)
 
@@ -4069,7 +4101,7 @@ class CompositeLayer(HiddenLayer):
         logger.info('Get topological weights for which layer?')
         for i, component in enumerate(self.components):
             logger.info('{0} {1}'.format(i, component.layer_name))
-        x = raw_input()
+        x = input()
         return self.components[int(x)].get_weights_topo()
 
     def get_monitoring_channels_from_state(self, state):

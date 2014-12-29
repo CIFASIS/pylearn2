@@ -4,15 +4,14 @@
     WRITEME
 """
 try:
-    import cPickle
     from cPickle import BadPickleGet
 except ImportError:
-    import pickle as cPickle
-    from pickle import UnpicklingError as BadPickleGet
+    BadPickleGet = KeyError
 import pickle
 import logging
 import numpy as np
-from theano.compat.six.moves import xrange
+from theano.compat import six
+from theano.compat.six.moves import cPickle, xrange
 import os
 import time
 import warnings
@@ -65,6 +64,7 @@ def raise_cannot_open(path):
     # end for
     assert False
 
+
 def load(filepath, recurse_depth=0, retry=True):
     """
     Loads object(s) from file specified by 'filepath'.
@@ -110,8 +110,8 @@ def load(filepath, recurse_depth=0, retry=True):
         try:
             return np.loadtxt(filepath)
         except Exception:
-            reraise_as(Exception("{0} cannot be loaded by serial.load (trying "
-                                 "to use np.loadtxt)".format(filepath)))
+            reraise_as("{0} cannot be loaded by serial.load (trying "
+                       "to use np.loadtxt)".format(filepath))
 
     if filepath.endswith('.mat'):
         global io
@@ -132,16 +132,17 @@ def load(filepath, recurse_depth=0, retry=True):
         #this code should never be reached
         assert False
 
+    # for loading PY2 pickle in PY3
+    encoding = {'encoding': 'latin-1'} if six.PY3 else {}
+
     def exponential_backoff():
         if recurse_depth > 9:
             logger.info('Max number of tries exceeded while trying to open '
                         '{0}'.format(filepath))
             logger.info('attempting to open via reading string')
-            f = open(filepath, 'rb')
-            lines = f.readlines()
-            f.close()
-            content = ''.join(lines)
-            return cPickle.loads(content)
+            with open(filepath, 'rb') as f:
+                content = f.read()
+            return cPickle.loads(content, **encoding)
         else:
             nsec = 0.5 * (2.0 ** float(recurse_depth))
             logger.info("Waiting {0} seconds and trying again".format(nsec))
@@ -151,7 +152,7 @@ def load(filepath, recurse_depth=0, retry=True):
     try:
         if not joblib_available:
             with open(filepath, 'rb') as f:
-                obj = cPickle.load(f)
+                obj = cPickle.load(f, **encoding)
         else:
             try:
                 obj = joblib.load(filepath)
@@ -177,13 +178,9 @@ def load(filepath, recurse_depth=0, retry=True):
             improve_memory_error_message(e, 
                 "You do not have enough memory to open %s" % filepath)
 
-    except BadPickleGet:
+    except (BadPickleGet, EOFError, KeyError) as e:
         if not retry:
-            reraise_as(BadPickleGet('Failed to open {0}'.format(filepath)))
-        obj =  exponential_backoff()
-    except EOFError:
-        if not retry:
-            reraise_as(EOFError("Failed to open {0}".format(filepath)))
+            reraise_as(e.__class__('Failed to open {0}'.format(filepath)))
         obj =  exponential_backoff()
     except ValueError:
         logger.exception
@@ -193,7 +190,7 @@ def load(filepath, recurse_depth=0, retry=True):
         obj =  exponential_backoff()
     except Exception:
         #assert False
-        reraise_as(Exception("Couldn't open {0}".format(filepath)))
+        reraise_as("Couldn't open {0}".format(filepath))
 
     #if the object has no yaml_src, we give it one that just says it
     #came from this file. could cause trouble if you save obj again
@@ -454,7 +451,7 @@ def read_bin_lush_matrix(filepath):
     try:
         magic = read_int(f)
     except ValueError:
-        reraise_as(ValueError("Couldn't read magic number"))
+        reraise_as("Couldn't read magic number")
     ndim = read_int(f)
 
     if ndim == 0:
@@ -475,7 +472,7 @@ def read_bin_lush_matrix(filepath):
 
     excess = f.read(-1)
 
-    if excess != '':
+    if excess:
         raise ValueError(str(len(excess))+' extra bytes found at end of file.'
                 ' This indicates  mismatch between header and content')
 

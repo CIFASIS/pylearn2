@@ -240,7 +240,8 @@ class Cost(object):
             stochastic.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError(str(type(self)) + " needs to implement "
+                                  "is_stochastic.")
 
 
 class SumOfCosts(Cost):
@@ -574,35 +575,6 @@ class LpPenalty(NullDataSpecsMixin, Cost):
             # Absolute value handles odd-valued p cases
             penalty = penalty + abs(var ** self.p).sum()
         return penalty
-
-
-class CrossEntropy(DefaultDataSpecsMixin, Cost):
-    """
-    DEPRECATED
-    """
-
-    def __init__(self):
-        warnings.warn("CrossEntropy is deprecated. You should use a "
-                      "model-specific cross entropy cost function. "
-                      "CrossEntropy will be removed on or after August "
-                      "3, 2014", stacklevel=2)
-        self.supervised = True
-
-    def expr(self, model, data, ** kwargs):
-        """
-        DEPRECATED
-
-        Parameters
-        ----------
-        model : DEPRECATED
-        data : DEPRECATED
-        """
-        self.get_data_specs(model)[0].validate(data)
-
-        # unpack data
-        (X, Y) = data
-        return (-Y * T.log(model(X)) -
-                (1 - Y) * T.log(1 - model(X))).sum(axis=1).mean()
 
 
 class MethodCost(Cost):

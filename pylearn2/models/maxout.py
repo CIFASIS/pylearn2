@@ -37,6 +37,7 @@ from theano import tensor as T
 
 from pylearn2.compat import OrderedDict
 from pylearn2.linear.matrixmul import MatrixMul
+from pylearn2.model_extensions.norm_constraint import MaxL2FilterNorm
 from pylearn2.models.mlp import Layer
 from pylearn2.models.model import Model
 from pylearn2.space import Conv2DSpace
@@ -167,6 +168,9 @@ class Maxout(Layer):
         if max_row_norm is not None:
             raise NotImplementedError()
 
+        if max_col_norm is not None:
+            self.extensions.append(MaxL2FilterNorm(max_col_norm))
+
     @functools.wraps(Model.get_lr_scalers)
     def get_lr_scalers(self):
 
@@ -282,7 +286,7 @@ class Maxout(Layer):
     def _modify_updates(self, updates):
         """
         Replaces the values in `updates` if needed to enforce the options set
-        in the __init__ method, including `mask_weights` and `max_col_norm`.
+        in the __init__ method, including `mask_weights`
 
         Parameters
         ----------
@@ -303,15 +307,6 @@ class Maxout(Layer):
             W, = self.transformer.get_params()
             if W in updates:
                 updates[W] = updates[W] * self.mask
-
-        if self.max_col_norm is not None:
-            assert self.max_row_norm is None
-            W, = self.transformer.get_params()
-            if W in updates:
-                updated_W = updates[W]
-                col_norms = T.sqrt(T.sum(T.sqr(updated_W), axis=0))
-                desired_norms = T.clip(col_norms, 0, self.max_col_norm)
-                updates[W] = updated_W * (desired_norms / (1e-7 + col_norms))
 
     @functools.wraps(Model.get_params)
     def get_params(self):
@@ -830,7 +825,11 @@ class MaxoutConvC01B(Layer):
 
         self.detector_space.validate(z)
 
-        assert self.detector_space.num_channels % 16 == 0
+        assert self.detector_space.num_channels % 16 == 0, (
+            'Wrong channels number: ' + str(self.detector_space.num_channels) +
+            '. The number of channels should be a multiple of 16. Note that '
+            'the number of channels is determined as: num_channels * '
+            'num_pieces')
 
         if self.output_space.num_channels % 16 == 0:
             # alex's max pool op only works when the number of channels
@@ -1036,8 +1035,6 @@ class MaxoutLocalC01B(Layer):
         If true, all biases in the same channel are constrained to be the
         same as each other. Otherwise, each bias at each location is
         learned independently.
-    max_filter_norm : float, optional
-        DEPRECATED, use max_kernel_norm instead.
     max_kernel_norm : float, optional
         If specified, each kernel is constrained to have at most this norm.
     input_normalization : callable
@@ -1080,7 +1077,6 @@ class MaxoutLocalC01B(Layer):
                  fix_kernel_shape=False,
                  partial_sum=1,
                  tied_b=False,
-                 max_filter_norm=None,
                  max_kernel_norm=None,
                  input_normalization=None,
                  detector_normalization=None,
@@ -1088,13 +1084,6 @@ class MaxoutLocalC01B(Layer):
                  output_normalization=None,
                  input_groups=1,
                  kernel_stride=(1, 1)):
-
-        if max_filter_norm is not None:
-            max_kernel_norm = max_filter_norm
-            warnings.warn("max_filter_norm argument is deprecated, use "
-                          "max_kernel_norm instead. max_filter_norm "
-                          "will be removed on or after 2014-10-02.",
-                          stacklevel=2)
 
         assert (pool_shape is None) == (pool_stride is None)
 
