@@ -105,20 +105,38 @@ class DenseMulticlassSVM(OneVsRestClassifier, Block, Model):
 
     def fit(self, X, y):
         """
-        .. todo::
+        Fit underlying estimators.
 
-            WRITEME
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            Data.
+        y : array-like, shape = [n_samples] or [n_samples, n_classes]
+            Multi-class targets. An indicator matrix turns on multilabel
+            classification.
+
+        Returns
+        -------
+        self
         """
-        super(DenseMulticlassSVM,self).fit(X,y)
+        super(DenseMulticlassSVM, self).fit(X, y)
 
         return self
 
     def decision_function(self, X):
         """
-        X : ndarray
+        Returns the distance of each sample from the decision boundary for
+        each class.
+
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
             A 2D ndarray with each row containing the input features for one
             example.
-        """
-        return np.concatenate([estimator.decision_function(X) for estimator in
-            self.estimators_ ], axis = 1)
 
+        Returns
+        -------
+        T : array-like, shape = [n_samples, n_classes]
+        """
+        return np.column_stack([estimator.decision_function(X)
+                                for estimator in self.estimators_])

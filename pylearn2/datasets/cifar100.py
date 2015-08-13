@@ -101,8 +101,6 @@ class CIFAR100(DenseDesignMatrix):
         # patch old pkl files
         if not hasattr(self, 'center'):
             self.center = False
-        if not hasattr(self, 'rescale'):
-            self.rescale = False
         if not hasattr(self, 'gcn'):
             self.gcn = False
 
@@ -115,12 +113,18 @@ class CIFAR100(DenseDesignMatrix):
         if not self.center:
             rval -= 127.5
 
-        if not self.rescale:
-            rval /= 127.5
-
+        rval /= 127.5
         rval = np.clip(rval, -1., 1.)
 
         return rval
+
+    def __setstate__(self, state):
+        super(CIFAR100, self).__setstate__(state)
+        # Patch old pkls
+        if self.y is not None and self.y.ndim == 1:
+            self.y = self.y.reshape((self.y.shape[0], 1))
+        if 'y_labels' not in state:
+            self.y_labels = 100
 
     def adjust_to_be_viewed_with(self, X, orig, per_example=False):
         """
@@ -138,8 +142,6 @@ class CIFAR100(DenseDesignMatrix):
         # patch old pkl files
         if not hasattr(self, 'center'):
             self.center = False
-        if not hasattr(self, 'rescale'):
-            self.rescale = False
         if not hasattr(self, 'gcn'):
             self.gcn = False
 
@@ -156,9 +158,7 @@ class CIFAR100(DenseDesignMatrix):
         if not self.center:
             rval -= 127.5
 
-        if not self.rescale:
-            rval /= 127.5
-
+        rval /= 127.5
         rval = np.clip(rval, -1., 1.)
 
         return rval
@@ -171,7 +171,6 @@ class CIFAR100(DenseDesignMatrix):
         """
         return CIFAR100(which_set='test',
                         center=self.center,
-                        rescale=self.rescale,
                         gcn=self.gcn,
                         toronto_prepro=self.toronto_prepro,
                         axes=self.axes)

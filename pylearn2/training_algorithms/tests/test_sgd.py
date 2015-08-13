@@ -22,7 +22,8 @@ from pylearn2.training_algorithms.sgd import (ExponentialDecay,
                                               LinearDecayOverEpoch,
                                               MonitorBasedLRAdjuster,
                                               SGD,
-                                              AnnealedLearningRate)
+                                              AnnealedLearningRate,
+                                              EpochMonitor)
 from pylearn2.training_algorithms.learning_rule import (Momentum,
                                                         MomentumAdjustor)
 from pylearn2.utils.iteration import _iteration_schemes
@@ -49,10 +50,28 @@ class DummyCost(DefaultDataSpecsMixin, Cost):
 
 
 class DummyModel(Model):
+    """
+    A dummy model used for testing.
 
-    def __init__(self, shapes, lr_scalers=None):
+    Parameters
+    ----------
+    shapes : list
+        List of shapes for each parameter.
+    lr_scalers : list, optional
+        Scalers to use for each parameter.
+    init_type : string, optional
+        How to fill initial values in parameters: `random` - generate random
+        values; `zeros` - set all to zeros.
+    """
+    def __init__(self, shapes, lr_scalers=None, init_type='random'):
         super(DummyModel, self).__init__()
-        self._params = [sharedX(np.random.random(shape)) for shape in shapes]
+        if init_type == 'random':
+            self._params = [sharedX(np.random.random(shp)) for shp in shapes]
+        elif init_type == 'zeros':
+            self._params = [sharedX(np.zeros(shp)) for shp in shapes]
+        else:
+            raise ValueError('Unknown value for init_type: %s',
+                             init_type)
         self.input_space = VectorSpace(1)
         self.lr_scalers = lr_scalers
 
@@ -1422,7 +1441,8 @@ def test_determinism():
         termination_criterion = EpochCounter(5)
 
         def run_algorithm():
-            unsupported_modes = ['random_slice', 'random_uniform']
+            unsupported_modes = ['random_slice', 'random_uniform',
+                                 'even_sequences']
             algorithm = SGD(learning_rate,
                             cost,
                             batch_size=batch_size,
@@ -1438,7 +1458,6 @@ def test_determinism():
             try:
                 algorithm.train(dataset)
             except ValueError:
-                print(mode)
                 assert mode in unsupported_modes
                 raised = True
             if mode in unsupported_modes:
@@ -1931,6 +1950,45 @@ def test_uneven_batch_size():
         model_force_batch_size=batch_size,
         train_iteration_mode='sequential',
         monitor_iteration_mode='even_sequential')
+
+
+def test_epoch_monitor():
+    """
+    Checks that monitored channels contain expected number of values
+    when using EpochMonitor for updates within epochs.
+    """
+    dim = 1
+    batch_size = 3
+    n_batches = 10
+    m = n_batches * batch_size
+
+    dataset = ArangeDataset(m)
+    model = SoftmaxModel(dim)
+    monitor = Monitor.get_monitor(model)
+    learning_rate = 1e-3
+    data_specs = (model.get_input_space(), model.get_input_source())
+    cost = DummyCost()
+    termination_criterion = EpochCounter(1)
+
+    monitor_rate = 3
+    em = EpochMonitor(model=model,
+                      tick_rate=None,
+                      monitor_rate=monitor_rate)
+
+    algorithm = SGD(learning_rate,
+                    cost,
+                    batch_size=batch_size,
+                    train_iteration_mode='sequential',
+                    monitoring_dataset=dataset,
+                    termination_criterion=termination_criterion,
+                    update_callbacks=[em],
+                    set_batch_size=False)
+
+    algorithm.setup(dataset=dataset, model=model)
+    algorithm.train(dataset)
+
+    for key, val in monitor.channels.items():
+        assert len(val.val_record) == n_batches//monitor_rate
 
 
 if __name__ == '__main__':

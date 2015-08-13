@@ -26,7 +26,21 @@ def relu(x):
 
     Rectified linear activation
     """
-    return T.max(0, x)
+    return T.switch(x < 0.0, 0., x)
+    #return T.max(0, x)
+
+
+def mrelu(x):
+    """
+    .. todo::
+
+        WRITEME properly
+
+    Rectified linear activation
+    """
+    return T.switch(x < 0.0, 0., T.switch(x > 1.0, 1.0, x))
+    #return T.max(0, x)
+
 
 
 def _rescale_softmax(sm, min_val):

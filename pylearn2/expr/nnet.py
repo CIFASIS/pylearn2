@@ -17,18 +17,17 @@ from theano.gof.op import get_debug_values
 
 def softmax_numpy(x):
     """
-    .. todo::
-
-        WRITEME properly
+    NumpPy implementation of the softmax function.
 
     Parameters
     ----------
-    x : matrix
+    x : ndarray
+        Should have two dimensions
 
     Returns
     -------
-    rval : vector
-        rval[i] is the softmax of row i of x
+    rval : ndarray
+        rval[i,:] is the softmax of x[i,:]
     """
     stable_x = (x.T - x.max(axis=1)).T
     numer = np.exp(stable_x)
@@ -37,9 +36,7 @@ def softmax_numpy(x):
 
 def pseudoinverse_softmax_numpy(x):
     """
-    .. todo::
-
-        WRITEME properly
+    NumPy implementation of a pseudo-inverse of the softmax function.
 
     Parameters
     ----------
@@ -61,9 +58,18 @@ def pseudoinverse_softmax_numpy(x):
 
 def sigmoid_numpy(x):
     """
-    .. todo::
+    NumPy implementation of the logistic sigmoid function.
 
-        WRITEME
+    Parameters
+    ----------
+    x : ndarray
+        Arguments to the logistic sigmoid function
+
+    Returns
+    -------
+    y : ndarray
+        The output of the logistic sigmoid function applied
+        element-wise to x
     """
     assert not isinstance(x, theano.gof.Variable)
     return 1. / (1. + np.exp(-x))
@@ -71,9 +77,17 @@ def sigmoid_numpy(x):
 
 def inverse_sigmoid_numpy(x):
     """
-    .. todo::
+    NumPy implementation of the inverse of the logistic sigmoid function.
 
-        WRITEME
+    Parameters
+    ----------
+    x : ndarray
+        An array of values in the interval (0, 1)
+
+    Returns
+    -------
+    y: ndarray
+        An array of values such that sigmoid_numpy(y) ~=~ x
     """
     return np.log(x / (1. - x))
 
@@ -109,6 +123,46 @@ def arg_of_softmax(Y_hat):
         raise ValueError("Expected Y_hat to be the output of a softmax, "
                          "but it appears to be the output of " + str(op) +
                          " of type " + str(type(op)))
+    z, = owner.inputs
+    assert z.ndim == 2
+    return z
+
+
+def arg_of_sigmoid(Y_hat):
+    """
+    Given the output of a call to theano.tensor.nnet.sigmoid,
+    returns the argument to the sigmoid (by tracing the Theano
+    graph).
+
+    Parameters
+    ----------
+    Y_hat : Variable
+        T.nnet.sigmoid(Z)
+
+    Returns
+    -------
+    Z : Variable
+        The variable that was passed to T.nnet.sigmoid to create `Y_hat`.
+        Raises an error if `Y_hat` is not actually the output of a theano
+        sigmoid.
+    """
+    assert hasattr(Y_hat, 'owner')
+    owner = Y_hat.owner
+    assert owner is not None
+    op = owner.op
+    if isinstance(op, Print):
+        assert len(owner.inputs) == 1
+        Y_hat, = owner.inputs
+        owner = Y_hat.owner
+        op = owner.op
+    success = False
+    if isinstance(op, T.Elemwise):
+        if isinstance(op.scalar_op, T.nnet.sigm.ScalarSigmoid):
+            success = True
+    if not success:
+        raise TypeError("Expected Y_hat to be the output of a sigmoid, "
+                        "but it appears to be the output of " + str(op) +
+                        " of type " + str(type(op)))
     z, = owner.inputs
     assert z.ndim == 2
     return z
